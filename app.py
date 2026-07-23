@@ -14,7 +14,7 @@ Deployment:
 Usage:
     python app.py
 """
-
+import os
 import logging
 import time
 from pathlib import Path
@@ -789,9 +789,11 @@ load_atlas_data()
 logger.info("Building interface...")
 demo = create_app()
 
-# Local entry point only
+
 if __name__ == "__main__":
     demo.launch(
+        server_name="0.0.0.0",
+        server_port=int(os.environ.get("PORT", 7860)),
         theme=gr.themes.Soft(primary_hue="teal", secondary_hue="slate"),
         css=APP_CSS,
     )
