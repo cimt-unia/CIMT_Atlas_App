@@ -1,0 +1,8 @@
+gradio
+nibabel
+numpy
+pandas
+plotly
+matplotlib
+scikit-image
+nilearn
