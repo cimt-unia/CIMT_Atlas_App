@@ -2,18 +2,24 @@
 """
 CIMT Volumetric 3D Explorer — Gradio Application
 =================================================
-3-level cascade (System -> Hemisphere -> Sub-system) narrows 448 ROIs
-to a small checklist. The user manually ticks the ROIs to render.
+2-level cascade (System -> Sub-system) narrows 448 ROIs to a small
+checklist. The user manually ticks the ROIs to render.
 Extra indices can be added via Advanced.
-Layout: 3D plot dominates the top; controls are compact below.
+
+Layout: Minimalist, modern. White background. 3D viewer dominates the
+left; a compact control sidebar sits on the right. Clean hierarchy,
+generous whitespace, single accent colour.
+
 Deployment:
     Place alongside a `data/` folder containing:
       - CIMT_448ROIs_atlas.nii.gz
       - cimt_atlas_labels.csv
     Compatible with HuggingFace Spaces (Gradio SDK).
+
 Usage:
     python app.py
 """
+
 import os
 import logging
 import time
@@ -39,6 +45,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("cimt_explorer")
 
+
 SCRIPT_DIR = Path(__file__).parent.resolve()
 DATA_DIR = SCRIPT_DIR / "data"
 ATLAS_FILENAME: str = "CIMT_448ROIs_atlas.nii.gz"
@@ -49,8 +56,7 @@ DEFAULT_ALPHA: float = 0.65
 DEFAULT_CMAP: str = "plasma"
 DEFAULT_LEGEND_MODE: str = "auto"
 BRAIN_OPACITY: float = 0.08
-BRAIN_COLOR: str = "#d4c5b9"
-HEMISPHERE_ALL: str = "All"
+BRAIN_COLOR: str = "#a8b0ba"
 SUBSYSTEM_ALL: str = "All Sub-systems"
 AUTO_FULL_LEGEND_THRESHOLD: int = 12
 
@@ -62,24 +68,276 @@ LEGEND_MODE_CHOICES: List[str] = [
     "auto", "full", "region_full_name", "roi_name",
 ]
 
+# ---------------------------------------------------------------------------
+# Design Tokens
+# ---------------------------------------------------------------------------
+
+_CLR_BG: str = "#ffffff"
+_CLR_SURFACE: str = "#ffffff"
+_CLR_BORDER: str = "#e8eaed"
+_CLR_BORDER_FOCUS: str = "#2c3e50"
+_CLR_ACCENT: str = "#2c3e50"
+_CLR_ACCENT_HOVER: str = "#3d5266"
+_CLR_TEXT: str = "#1a1a2e"
+_CLR_TEXT_SECONDARY: str = "#6b7280"
+_CLR_TEXT_MUTED: str = "#9ca3af"
+_CLR_SCENE_BG: str = "#f8f9fa"
+_CLR_HOVER_BG: str = "#f3f4f6"
+
+# ---------------------------------------------------------------------------
+# Application CSS
+# ---------------------------------------------------------------------------
+
 APP_CSS: str = """
-    .roi-checklist > div {
-        max-height: 220px;
-        overflow-y: auto;
-        border: 1px solid #e5e7eb;
-        border-radius: 8px;
-        padding: 8px;
-    }
-    .roi-checklist label {
-        font-size: 12px;
-    }
-    .status-box textarea {
-        font-family: 'JetBrains Mono', 'Fira Code', monospace;
-        font-size: 11px;
-    }
-    .plot-container {
-        min-height: 75vh;
-    }
+/* ── Fonts ──────────────────────────────────────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+/* ── Global ─────────────────────────────────────────────────────────────── */
+.gradio-container {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
+    background: #ffffff !important;
+    max-width: 1520px !important;
+    margin: 0 auto !important;
+    padding: 0 24px !important;
+}
+
+/* ── Header ─────────────────────────────────────────────────────────────── */
+.app-header {
+    padding: 28px 0 16px;
+    margin-bottom: 0;
+}
+.app-header h1 {
+    font-size: 22px !important;
+    font-weight: 700 !important;
+    color: #1a1a2e !important;
+    letter-spacing: -0.5px;
+    margin: 0 !important;
+}
+.app-header p {
+    font-size: 13px !important;
+    color: #6b7280 !important;
+    font-weight: 400;
+    margin: 4px 0 0 0 !important;
+}
+
+/* ── Main Layout ────────────────────────────────────────────────────────── */
+.main-layout {
+    gap: 20px !important;
+    align-items: stretch;
+}
+
+/* ── Viewer ─────────────────────────────────────────────────────────────── */
+.viewer-panel {
+    border: 1px solid #e8eaed;
+    border-radius: 12px;
+    overflow: hidden;
+    background: #f8f9fa;
+    display: flex;
+    flex-direction: column;
+}
+.viewer-panel .plot-container {
+    flex: 1;
+    min-height: 0;
+}
+.viewer-panel .plot-container > div {
+    height: 100% !important;
+}
+.viewer-panel .js-plotly-plot,
+.viewer-panel .plotly-graph-div {
+    height: 100% !important;
+    width: 100% !important;
+}
+
+/* ── Sidebar ────────────────────────────────────────────────────────────── */
+.sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+}
+
+/* ── Section Blocks ─────────────────────────────────────────────────────── */
+.section-block {
+    padding: 20px 0;
+    border-bottom: 1px solid #e8eaed;
+}
+.section-block:last-child {
+    border-bottom: none;
+}
+.section-label {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1.6px;
+    color: #9ca3af;
+    margin-bottom: 14px;
+}
+
+/* ── Dropdowns ──────────────────────────────────────────────────────────── */
+.gradio-container select,
+.gradio-container .wrap.svelte-1ipelgc {
+    background: #ffffff !important;
+    border: 1px solid #e8eaed !important;
+    border-radius: 8px !important;
+    color: #1a1a2e !important;
+    font-size: 13px !important;
+    font-family: 'Inter', sans-serif !important;
+    padding: 10px 14px !important;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.gradio-container select:focus,
+.gradio-container select:hover {
+    border-color: #2c3e50 !important;
+    box-shadow: 0 0 0 3px rgba(44, 62, 80, 0.06) !important;
+    outline: none;
+}
+.gradio-container label > span {
+    color: #6b7280 !important;
+    font-size: 12px !important;
+    font-weight: 500 !important;
+}
+
+/* ── Buttons ────────────────────────────────────────────────────────────── */
+.gradio-container button.primary {
+    background: #2c3e50 !important;
+    border: none !important;
+    border-radius: 8px !important;
+    color: #ffffff !important;
+    font-weight: 600 !important;
+    font-size: 13px !important;
+    font-family: 'Inter', sans-serif !important;
+    padding: 12px 24px !important;
+    letter-spacing: 0.2px;
+    transition: all 0.2s ease;
+    width: 100%;
+}
+.gradio-container button.primary:hover {
+    background: #3d5266 !important;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(44, 62, 80, 0.15);
+}
+.gradio-container button.primary:active {
+    transform: translateY(0);
+    box-shadow: none;
+}
+
+/* ── ROI Checklist (compact: ~4 visible rows) ───────────────────────────── */
+.roi-checklist > div {
+    max-height: 120px;
+    overflow-y: auto;
+    border: 1px solid #e8eaed;
+    border-radius: 8px;
+    padding: 6px 10px;
+    background: #ffffff;
+}
+.roi-checklist label {
+    font-size: 12px;
+    color: #1a1a2e;
+    padding: 4px 8px;
+    border-radius: 5px;
+    transition: background 0.1s ease;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    line-height: 1.3;
+}
+.roi-checklist label:hover {
+    background: #f3f4f6;
+}
+.roi-checklist input[type="checkbox"] {
+    accent-color: #2c3e50;
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+}
+.roi-checklist input[type="checkbox"]:checked + span {
+    color: #2c3e50;
+    font-weight: 600;
+}
+
+/* ── Scrollbar ──────────────────────────────────────────────────────────── */
+.roi-checklist > div::-webkit-scrollbar {
+    width: 4px;
+}
+.roi-checklist > div::-webkit-scrollbar-track {
+    background: transparent;
+}
+.roi-checklist > div::-webkit-scrollbar-thumb {
+    background: #d1d5db;
+    border-radius: 2px;
+}
+.roi-checklist > div::-webkit-scrollbar-thumb:hover {
+    background: #9ca3af;
+}
+
+/* ── Status ─────────────────────────────────────────────────────────────── */
+.status-bar textarea {
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 11px !important;
+    background: #f8f9fa !important;
+    border: 1px solid #e8eaed !important;
+    border-radius: 6px !important;
+    color: #6b7280 !important;
+    padding: 8px 12px !important;
+}
+
+/* ── Accordion ──────────────────────────────────────────────────────────── */
+.gradio-container .accordion {
+    border: 1px solid #e8eaed !important;
+    border-radius: 8px !important;
+    background: #ffffff !important;
+}
+.gradio-container .accordion .label-wrap span {
+    font-size: 11px !important;
+    font-weight: 600 !important;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #9ca3af !important;
+}
+
+/* ── Sliders ────────────────────────────────────────────────────────────── */
+.gradio-container input[type="range"] {
+    accent-color: #2c3e50;
+}
+
+/* ── Checkboxes (general) ───────────────────────────────────────────────── */
+.gradio-container input[type="checkbox"] {
+    accent-color: #2c3e50;
+}
+
+/* ── Footer ─────────────────────────────────────────────────────────────── */
+.app-footer {
+    font-size: 11px;
+    color: #9ca3af;
+    text-align: center;
+    padding: 20px 0 28px;
+    margin-top: 8px;
+    letter-spacing: 0.3px;
+}
+
+/* ── Plotly Overrides ───────────────────────────────────────────────────── */
+.js-plotly-plot .plotly .modebar {
+    background: rgba(255, 255, 255, 0.95) !important;
+    border-radius: 6px;
+    padding: 4px;
+    border: 1px solid #e8eaed;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+.js-plotly-plot .plotly .modebar-btn path {
+    fill: #6b7280 !important;
+}
+.js-plotly-plot .plotly .modebar-btn:hover path {
+    fill: #2c3e50 !important;
+}
+
+/* ── Misc ───────────────────────────────────────────────────────────────── */
+.gradio-container .prose {
+    color: #1a1a2e !important;
+}
+.gradio-container .info-text,
+.gradio-container .info {
+    color: #9ca3af !important;
+    font-size: 11px !important;
+}
 """
 
 # ---------------------------------------------------------------------------
@@ -100,16 +358,20 @@ _LABEL_TO_INDEX: Dict[str, int] = {}
 
 def build_display_labels(labels_df: pd.DataFrame) -> pd.Series:
     """Create unique, human-readable labels for the ROI checklist.
+
     Rules:
         1. Use region_full_name as the primary label.
         2. Append hemisphere abbreviation unless the full name already
            ends with '(Left)' or '(Right)' (e.g., cerebellar ROIs).
         3. If the resulting label is duplicated, append the ROI code.
         4. If still duplicated, append the atlas index.
+
     Args:
         labels_df: Atlas labels DataFrame with required columns.
+
     Returns:
         Series of unique display labels aligned with labels_df index.
+
     Raises:
         ValueError: If labels cannot be made unique.
     """
@@ -230,33 +492,18 @@ def get_systems() -> List[str]:
     return sorted(_LABELS_DF["functional_system"].dropna().unique().tolist())
 
 
-def get_hemispheres(system: Optional[str]) -> List[str]:
-    """Hemisphere options for a given system."""
+def get_subsystems(system: Optional[str]) -> List[str]:
+    """Sub-system options filtered by system."""
     assert _LABELS_DF is not None
     df = _LABELS_DF
     if system:
         df = df[df["functional_system"] == system]
-    hemis = sorted(df["hemisphere"].dropna().unique().tolist())
-    return [HEMISPHERE_ALL] + hemis
-
-
-def get_subsystems(
-    system: Optional[str], hemisphere: Optional[str]
-) -> List[str]:
-    """Sub-system options filtered by system + hemisphere."""
-    assert _LABELS_DF is not None
-    df = _LABELS_DF
-    if system:
-        df = df[df["functional_system"] == system]
-    if hemisphere and hemisphere != HEMISPHERE_ALL:
-        df = df[df["hemisphere"] == hemisphere]
     subs = sorted(df["sub_system"].dropna().unique().tolist())
     return [SUBSYSTEM_ALL] + subs
 
 
 def get_filtered_roi_labels(
     system: Optional[str],
-    hemisphere: Optional[str],
     subsystem: Optional[str],
 ) -> List[str]:
     """Return sorted display labels for ROIs matching the cascade filters."""
@@ -264,8 +511,6 @@ def get_filtered_roi_labels(
     df = _LABELS_DF
     if system:
         df = df[df["functional_system"] == system]
-    if hemisphere and hemisphere != HEMISPHERE_ALL:
-        df = df[df["hemisphere"] == hemisphere]
     if subsystem and subsystem != SUBSYSTEM_ALL:
         df = df[df["sub_system"] == subsystem]
     return sorted(df["display_label"].tolist())
@@ -317,6 +562,29 @@ def resolve_plot_label(
 # ---------------------------------------------------------------------------
 # Figure Builder
 # ---------------------------------------------------------------------------
+
+def _apply_scene_layout(fig: go.Figure) -> go.Figure:
+    """Apply consistent scene styling to a figure (responsive sizing)."""
+    fig.update_layout(
+        autosize=True,
+        paper_bgcolor=_CLR_SCENE_BG,
+        scene=dict(
+            domain=dict(x=[0.0, 1.0], y=[0.0, 1.0]),
+            xaxis_visible=False,
+            yaxis_visible=False,
+            zaxis_visible=False,
+            camera=dict(
+                eye=dict(x=0.0, y=1.8, z=0.4),
+                up=dict(x=0.0, y=0.0, z=1.0),
+                center=dict(x=0.0, y=0.0, z=0.0),
+            ),
+            bgcolor=_CLR_SCENE_BG,
+            aspectmode="data",
+        ),
+        margin=dict(t=12, b=12, l=12, r=12),
+    )
+    return fig
+
 
 def build_figure(
     selected_indices: List[int],
@@ -398,46 +666,24 @@ def build_figure(
             showlegend=True,
         ))
 
-    # Title.
-    title_text = ""
+    _apply_scene_layout(fig)
 
     fig.update_layout(
-        title=dict(
-            text=f"<b>{title_text}</b>",
-            y=0.98,
-            x=0.5,
-            xanchor="center",
-            font=dict(size=18, family="Helvetica, Arial, sans-serif"),
-        ),
-        width=1200,
-        height=850,
-        paper_bgcolor="white",
-        scene=dict(
-            domain=dict(x=[0.0, 1.0], y=[0.0, 1.0]),
-            xaxis_visible=False,
-            yaxis_visible=False,
-            zaxis_visible=False,
-            camera=dict(
-                eye=dict(x=0.0, y=1.8, z=0.4),
-                up=dict(x=0.0, y=0.0, z=1.0),
-                center=dict(x=0.0, y=0.0, z=0.0),
-            ),
-            bgcolor="white",
-            aspectmode="data",
-        ),
         legend=dict(
             yanchor="top",
             y=0.95,
-            xanchor="right",
-            x=0.99,
-            bgcolor="rgba(255,255,255,0.85)",
-            bordercolor="#e0e0e0",
+            xanchor="left",
+            x=0.01,
+            bgcolor="rgba(255, 255, 255, 0.92)",
+            bordercolor=_CLR_BORDER,
             borderwidth=1,
-            font=dict(size=10),
-            title=dict(text="<b>Regions</b>", font=dict(size=11)),
+            font=dict(size=12, color=_CLR_TEXT, family="Inter, sans-serif"),
+            title=dict(
+                text="<b>Regions</b>",
+                font=dict(size=13, color=_CLR_TEXT_SECONDARY),
+            ),
             itemsizing="constant",
         ),
-        margin=dict(t=50, b=0, l=0, r=0),
     )
 
     return fig
@@ -456,22 +702,15 @@ def build_initial_figure() -> go.Figure:
             j=_BRAIN_FACES[:, 1],
             k=_BRAIN_FACES[:, 2],
             color=BRAIN_COLOR,
-            opacity=0.15,
+            opacity=BRAIN_OPACITY,
             showlegend=False,
             hoverinfo="skip",
         ))
 
     fig.update_layout(
-        title=dict(
-            text="",
-            y=0.98,
-            x=0.5,
-            xanchor="center",
-            font=dict(size=20, family="Helvetica, Arial, sans-serif"),
-        ),
-        width=1200,
-        height=850,
-        paper_bgcolor="white",
+        width=860,
+        height=780,
+        paper_bgcolor=_CLR_SCENE_BG,
         scene=dict(
             domain=dict(x=[0.0, 1.0], y=[0.0, 1.0]),
             xaxis_visible=False,
@@ -482,10 +721,10 @@ def build_initial_figure() -> go.Figure:
                 up=dict(x=0.0, y=0.0, z=1.0),
                 center=dict(x=0.0, y=0.0, z=0.0),
             ),
-            bgcolor="white",
+            bgcolor=_CLR_SCENE_BG,
             aspectmode="data",
         ),
-        margin=dict(t=50, b=0, l=0, r=0),
+        margin=dict(t=12, b=12, l=12, r=12),
     )
 
     return fig
@@ -497,28 +736,11 @@ def build_initial_figure() -> go.Figure:
 
 def on_system_change(
     system: Optional[str],
-) -> Tuple[gr.Dropdown, gr.Dropdown, gr.CheckboxGroup]:
-    """Cascade: System changed -> update Hemisphere, Sub-system, checklist."""
-    sys_val = system if system else None
-    hemis = get_hemispheres(sys_val)
-    subs = get_subsystems(sys_val, None)
-    roi_labels = get_filtered_roi_labels(sys_val, None, None)
-    return (
-        gr.Dropdown(choices=hemis, value=HEMISPHERE_ALL),
-        gr.Dropdown(choices=subs, value=SUBSYSTEM_ALL),
-        gr.CheckboxGroup(choices=roi_labels, value=[]),
-    )
-
-
-def on_hemisphere_change(
-    system: Optional[str],
-    hemisphere: Optional[str],
 ) -> Tuple[gr.Dropdown, gr.CheckboxGroup]:
-    """Cascade: Hemisphere changed -> update Sub-system + checklist."""
+    """Cascade: System changed -> update Sub-system + checklist."""
     sys_val = system if system else None
-    hemi_val = hemisphere if hemisphere else HEMISPHERE_ALL
-    subs = get_subsystems(sys_val, hemi_val)
-    roi_labels = get_filtered_roi_labels(sys_val, hemi_val, None)
+    subs = get_subsystems(sys_val)
+    roi_labels = get_filtered_roi_labels(sys_val, None)
     return (
         gr.Dropdown(choices=subs, value=SUBSYSTEM_ALL),
         gr.CheckboxGroup(choices=roi_labels, value=[]),
@@ -527,33 +749,13 @@ def on_hemisphere_change(
 
 def on_subsystem_change(
     system: Optional[str],
-    hemisphere: Optional[str],
     subsystem: Optional[str],
 ) -> gr.CheckboxGroup:
     """Cascade: Sub-system changed -> update checklist."""
     sys_val = system if system else None
-    hemi_val = hemisphere if hemisphere else HEMISPHERE_ALL
     sub_val = subsystem if subsystem else SUBSYSTEM_ALL
-    roi_labels = get_filtered_roi_labels(sys_val, hemi_val, sub_val)
+    roi_labels = get_filtered_roi_labels(sys_val, sub_val)
     return gr.CheckboxGroup(choices=roi_labels, value=[])
-
-
-def on_select_all(
-    system: Optional[str],
-    hemisphere: Optional[str],
-    subsystem: Optional[str],
-) -> gr.CheckboxGroup:
-    """Select all currently filtered ROIs."""
-    sys_val = system if system else None
-    hemi_val = hemisphere if hemisphere else HEMISPHERE_ALL
-    sub_val = subsystem if subsystem else SUBSYSTEM_ALL
-    roi_labels = get_filtered_roi_labels(sys_val, hemi_val, sub_val)
-    return gr.CheckboxGroup(value=roi_labels)
-
-
-def on_clear_all() -> gr.CheckboxGroup:
-    """Clear all checked ROIs."""
-    return gr.CheckboxGroup(value=[])
 
 
 def on_render(
@@ -643,125 +845,159 @@ def on_render(
 # ---------------------------------------------------------------------------
 
 def create_app() -> gr.Blocks:
-    """Build the Gradio Blocks interface with plot-dominant layout."""
+    """Build the Gradio Blocks interface — minimalist, viewer-left / controls-right."""
     systems = get_systems()
     n_rois = len(_LABELS_DF) if _LABELS_DF is not None else 0
 
-    with gr.Blocks(title="CIMT Volumetric 3D Explorer") as app:
-
-        # --- TOP: Full-width 3D Plot (dominant) ---
-        plot_output = gr.Plot(
-            label="3D Volumetric View",
-            value=build_initial_figure(),
-            elem_classes=["plot-container"],
+    theme = (
+        gr.themes.Base(
+            primary_hue="slate",
+            secondary_hue="slate",
+            neutral_hue="slate",
+            font=gr.themes.GoogleFont("Inter"),
+            font_mono=gr.themes.GoogleFont("JetBrains Mono"),
         )
-
-        # --- BOTTOM: Compact controls ---
-        with gr.Row():
-            system_dd = gr.Dropdown(
-                choices=systems,
-                value=None,
-                label="Functional System",
-                scale=2,
-            )
-            hemisphere_dd = gr.Dropdown(
-                choices=[HEMISPHERE_ALL, "Left", "Right"],
-                value=HEMISPHERE_ALL,
-                label="Hemisphere",
-                scale=1,
-            )
-            subsystem_dd = gr.Dropdown(
-                choices=[SUBSYSTEM_ALL],
-                value=SUBSYSTEM_ALL,
-                label="Sub-system",
-                scale=2,
-            )
-            render_btn = gr.Button(
-                "Render", variant="primary", scale=1,
-            )
-
-        # ROI Checklist with Select All / Clear buttons
-        with gr.Row():
-            select_all_btn = gr.Button("Select All", size="sm", scale=1)
-            clear_all_btn = gr.Button("Clear All", size="sm", scale=1)
-
-        roi_checklist = gr.CheckboxGroup(
-            choices=[],
-            value=[],
-            label="ROIs (tick to select)",
-            elem_classes=["roi-checklist"],
+        .set(
+            body_background_fill=_CLR_BG,
+            body_text_color=_CLR_TEXT,
+            block_background_fill=_CLR_SURFACE,
+            block_border_width="1px",
+            block_border_color=_CLR_BORDER,
+            block_title_text_color=_CLR_TEXT,
+            block_label_text_color=_CLR_TEXT_SECONDARY,
+            input_background_fill=_CLR_BG,
+            input_border_color=_CLR_BORDER,
+            input_border_color_focus=_CLR_BORDER_FOCUS,
+            button_primary_background_fill=_CLR_ACCENT,
+            button_primary_background_fill_hover=_CLR_ACCENT_HOVER,
+            button_primary_text_color="#ffffff",
+            button_secondary_background_fill="#ffffff",
+            button_secondary_background_fill_hover=_CLR_HOVER_BG,
+            button_secondary_border_color=_CLR_BORDER,
+            button_secondary_text_color=_CLR_TEXT_SECONDARY,
         )
+    )
 
-        # Status bar (full width)
-        status_box = gr.Textbox(
-            label="Status",
-            interactive=False,
-            lines=2,
-            elem_classes=["status-box"],
-        )
+    with gr.Blocks(
+        title="CIMT Volumetric 3D Explorer",
+        theme=theme,
+        css=APP_CSS,
+    ) as app:
 
-        # Advanced options (full width, collapsed)
-        with gr.Accordion("Advanced", open=False):
-            indices_input = gr.Textbox(
-                placeholder="e.g. 446, 447",
-                label="Extra Indices (comma-separated)",
-                info="Appended to checked ROIs. Works standalone too.",
+        # ── HEADER ──────────────────────────────────────────────────────
+        with gr.Row(elem_classes=["app-header"]):
+            gr.Markdown(
+                "# CIMT Volumetric 3D Explorer\n"
+                "448-ROI Atlas · Interactive Mesh Rendering"
             )
-            with gr.Row():
-                legend_mode_dd = gr.Dropdown(
-                    choices=LEGEND_MODE_CHOICES,
-                    value=DEFAULT_LEGEND_MODE,
-                    label="Legend Labels",
-                    info="auto: full names for small selections, ROI codes for large",
-                )
-                cmap_dd = gr.Dropdown(
-                    choices=CMAP_CHOICES,
-                    value=DEFAULT_CMAP,
-                    label="Colormap",
-                )
-            with gr.Row():
-                alpha_slider = gr.Slider(
-                    minimum=0.1,
-                    maximum=1.0,
-                    step=0.05,
-                    value=DEFAULT_ALPHA,
-                    label="Surface Opacity",
-                )
-                brain_toggle = gr.Checkbox(
-                    value=True,
-                    label="Brain Reference Mesh",
+
+        # ── MAIN: Viewer (left) + Sidebar (right) ───────────────────────
+        with gr.Row(equal_height=True, elem_classes=["main-layout"]):
+
+            # LEFT — 3D Viewer
+            with gr.Column(scale=4, elem_classes=["viewer-panel"]):
+                plot_output = gr.Plot(
+                    label=None,
+                    value=build_initial_figure(),
+                    show_label=False,
+                    elem_classes=["plot-container"],
                 )
 
+            # RIGHT — Control Sidebar
+            with gr.Column(scale=1, min_width=320, elem_classes=["sidebar"]):
+
+                # Section 1: Navigation
+                with gr.Column(elem_classes=["section-block"]):
+                    gr.Markdown(
+                        "<div class='section-label'>Navigation</div>"
+                    )
+                    system_dd = gr.Dropdown(
+                        choices=systems,
+                        value=None,
+                        label="Functional System",
+                    )
+                    subsystem_dd = gr.Dropdown(
+                        choices=[SUBSYSTEM_ALL],
+                        value=SUBSYSTEM_ALL,
+                        label="Sub-system",
+                    )
+
+                # Section 2: Selection
+                with gr.Column(elem_classes=["section-block"]):
+                    gr.Markdown(
+                        "<div class='section-label'>Regions</div>"
+                    )
+                    roi_checklist = gr.CheckboxGroup(
+                        choices=[],
+                        value=[],
+                        label=None,
+                        show_label=False,
+                        elem_classes=["roi-checklist"],
+                    )
+
+                # Section 3: Render
+                with gr.Column(elem_classes=["section-block"]):
+                    render_btn = gr.Button(
+                        "Render",
+                        variant="primary",
+                        size="lg",
+                    )
+                    status_box = gr.Textbox(
+                        label=None,
+                        show_label=False,
+                        interactive=False,
+                        lines=1,
+                        placeholder="Awaiting selection…",
+                        elem_classes=["status-bar"],
+                    )
+
+                # Section 4: Advanced
+                with gr.Accordion("Advanced", open=False):
+                    indices_input = gr.Textbox(
+                        placeholder="e.g. 446, 447",
+                        label="Extra Indices",
+                        info="Comma-separated",
+                    )
+                    legend_mode_dd = gr.Dropdown(
+                        choices=LEGEND_MODE_CHOICES,
+                        value=DEFAULT_LEGEND_MODE,
+                        label="Legend Mode",
+                    )
+                    cmap_dd = gr.Dropdown(
+                        choices=CMAP_CHOICES,
+                        value=DEFAULT_CMAP,
+                        label="Colormap",
+                    )
+                    alpha_slider = gr.Slider(
+                        minimum=0.1,
+                        maximum=1.0,
+                        step=0.05,
+                        value=DEFAULT_ALPHA,
+                        label="Opacity",
+                    )
+                    brain_toggle = gr.Checkbox(
+                        value=True,
+                        label="Brain Mesh",
+                    )
+
+        # ── FOOTER ──────────────────────────────────────────────────────
         gr.Markdown(
-            f"*{n_rois} ROIs | {len(systems)} systems | "
-            f"Max {MAX_ROIS_RENDER} per render*"
+            f"<div class='app-footer'>"
+            f"{n_rois} ROIs · {len(systems)} Systems · "
+            f"Max {MAX_ROIS_RENDER} per render"
+            f"</div>"
         )
 
-        # --- Event Wiring ---
+        # ── EVENT WIRING ────────────────────────────────────────────────
 
         system_dd.change(
             fn=on_system_change,
             inputs=[system_dd],
-            outputs=[hemisphere_dd, subsystem_dd, roi_checklist],
-        )
-        hemisphere_dd.change(
-            fn=on_hemisphere_change,
-            inputs=[system_dd, hemisphere_dd],
             outputs=[subsystem_dd, roi_checklist],
         )
         subsystem_dd.change(
             fn=on_subsystem_change,
-            inputs=[system_dd, hemisphere_dd, subsystem_dd],
-            outputs=[roi_checklist],
-        )
-        select_all_btn.click(
-            fn=on_select_all,
-            inputs=[system_dd, hemisphere_dd, subsystem_dd],
-            outputs=[roi_checklist],
-        )
-        clear_all_btn.click(
-            fn=on_clear_all,
-            inputs=[],
+            inputs=[system_dd, subsystem_dd],
             outputs=[roi_checklist],
         )
         render_btn.click(
@@ -797,3 +1033,5 @@ if __name__ == "__main__":
         theme=gr.themes.Soft(primary_hue="teal", secondary_hue="slate"),
         css=APP_CSS,
     )
+
+
