@@ -849,39 +849,8 @@ def create_app() -> gr.Blocks:
     systems = get_systems()
     n_rois = len(_LABELS_DF) if _LABELS_DF is not None else 0
 
-    theme = (
-        gr.themes.Base(
-            primary_hue="slate",
-            secondary_hue="slate",
-            neutral_hue="slate",
-            font=gr.themes.GoogleFont("Inter"),
-            font_mono=gr.themes.GoogleFont("JetBrains Mono"),
-        )
-        .set(
-            body_background_fill=_CLR_BG,
-            body_text_color=_CLR_TEXT,
-            block_background_fill=_CLR_SURFACE,
-            block_border_width="1px",
-            block_border_color=_CLR_BORDER,
-            block_title_text_color=_CLR_TEXT,
-            block_label_text_color=_CLR_TEXT_SECONDARY,
-            input_background_fill=_CLR_BG,
-            input_border_color=_CLR_BORDER,
-            input_border_color_focus=_CLR_BORDER_FOCUS,
-            button_primary_background_fill=_CLR_ACCENT,
-            button_primary_background_fill_hover=_CLR_ACCENT_HOVER,
-            button_primary_text_color="#ffffff",
-            button_secondary_background_fill="#ffffff",
-            button_secondary_background_fill_hover=_CLR_HOVER_BG,
-            button_secondary_border_color=_CLR_BORDER,
-            button_secondary_text_color=_CLR_TEXT_SECONDARY,
-        )
-    )
-
     with gr.Blocks(
         title="CIMT Volumetric 3D Explorer",
-        theme=theme,
-        css=APP_CSS,
     ) as app:
 
         # ── HEADER ──────────────────────────────────────────────────────
@@ -1017,7 +986,7 @@ def create_app() -> gr.Blocks:
 
 
 # ---------------------------------------------------------------------------
-# Global Initialization (HF Spaces)
+# Global Initialization (HF Spaces / Render)
 # ---------------------------------------------------------------------------
 logger.info("Initializing CIMT Explorer...")
 load_atlas_data()
@@ -1025,13 +994,41 @@ load_atlas_data()
 logger.info("Building interface...")
 demo = create_app()
 
+# Theme must be defined at module level so launch() can reference it
+_APP_THEME = (
+    gr.themes.Base(
+        primary_hue="slate",
+        secondary_hue="slate",
+        neutral_hue="slate",
+        font=gr.themes.GoogleFont("Inter"),
+        font_mono=gr.themes.GoogleFont("JetBrains Mono"),
+    )
+    .set(
+        body_background_fill=_CLR_BG,
+        body_text_color=_CLR_TEXT,
+        block_background_fill=_CLR_SURFACE,
+        block_border_width="1px",
+        block_border_color=_CLR_BORDER,
+        block_title_text_color=_CLR_TEXT,
+        block_label_text_color=_CLR_TEXT_SECONDARY,
+        input_background_fill=_CLR_BG,
+        input_border_color=_CLR_BORDER,
+        input_border_color_focus=_CLR_BORDER_FOCUS,
+        button_primary_background_fill=_CLR_ACCENT,
+        button_primary_background_fill_hover=_CLR_ACCENT_HOVER,
+        button_primary_text_color="#ffffff",
+        button_secondary_background_fill="#ffffff",
+        button_secondary_background_fill_hover=_CLR_HOVER_BG,
+        button_secondary_border_color=_CLR_BORDER,
+        button_secondary_text_color=_CLR_TEXT_SECONDARY,
+    )
+)
 
 if __name__ == "__main__":
     demo.launch(
         server_name="0.0.0.0",
         server_port=int(os.environ.get("PORT", 7860)),
-        theme=gr.themes.Soft(primary_hue="teal", secondary_hue="slate"),
+        theme=_APP_THEME,
         css=APP_CSS,
     )
-
 
